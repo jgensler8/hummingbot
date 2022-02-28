@@ -9,6 +9,7 @@ from typing import (
 
 import numpy as np
 from cython.operator cimport(
+    address,
     dereference as deref,
     postincrement as inc,
 )
@@ -56,16 +57,16 @@ cdef class TradingIntensityIndicator:
         ask = deref(ask_book.begin()).getPrice()
         ask_amount = deref(ask_book.begin()).getAmount()
 
-        bid_prev = deref(self._bid_book.rbegin()).getPrice()
-        ask_prev = deref(self._ask_book.begin()).getPrice()
+        bid_prev = deref(deref(self._bid_book).rbegin()).getPrice()
+        ask_prev = deref(deref(self._ask_book).begin()).getPrice()
         price_prev = (bid_prev + ask_prev) / 2
 
         trades = []
 
         # Higher bids were filled - someone matched them - a determined seller
         # Equal bids - if amount lower - partially filled
-        ob_ri_prev = self._bid_book.rbegin()
-        while ob_ri_prev != self._bid_book.rend():
+        ob_ri_prev = deref(self._bid_book).rbegin()
+        while ob_ri_prev != deref(self._bid_book).rend():
             bid_prev = deref(ob_ri_prev).getPrice()
             bid_amount_prev = deref(ob_ri_prev).getAmount()
             if bid_prev < bid:
@@ -83,8 +84,8 @@ cdef class TradingIntensityIndicator:
 
         # Lower asks were filled - someone matched them - a determined buyer
         # Equal asks - if amount lower - partially filled
-        ob_i_prev = self._ask_book.begin()
-        while ob_i_prev != self._ask_book.end():
+        ob_i_prev = deref(self._ask_book).begin()
+        while ob_i_prev != deref(self._ask_book).end():
             ask_prev = deref(ob_i_prev).getPrice()
             ask_amount_prev = deref(ob_i_prev).getAmount()
             if ask_prev < ask:
@@ -165,14 +166,27 @@ cdef class TradingIntensityIndicator:
             return
 
         # Skip snapshots where no trades occurred
-        if self._bid_book.size() != 0 and deref(bid_book.begin()) == deref(self._bid_book.begin()):
+        if (
+            self._bid_book != NULL
+            and deref(self._bid_book).size() != 0
+            and deref(bid_book.begin()) == deref(deref(self._bid_book).begin())
+        ):
             return
 
-        if self._ask_book.size() != 0 and deref(ask_book.begin()) == deref(self._ask_book.begin()):
+        if (
+            self._ask_book != NULL
+            and deref(self._ask_book).size() != 0
+            and deref(ask_book.begin()) == deref(deref(self._ask_book).begin())
+        ):
             return
 
         # Retrieve previous order book, evaluate execution
-        if self._bid_book.size() != 0 and self._ask_book.size() != 0:
+        if (
+            self._ask_book != NULL
+            and deref(self._bid_book).size() != 0
+            and self._bid_book != NULL
+            and deref(self._ask_book).size() != 0
+        ):
             self.c_simulate_execution(bid_book, ask_book)
 
         if self.is_sampling_buffer_full:
@@ -180,8 +194,8 @@ cdef class TradingIntensityIndicator:
             self.c_estimate_intensity()
 
         # Store the orderbook
-        self._bid_book = bid_book
-        self._ask_book = ask_book
+        self._bid_book = address(bid_book)
+        self._ask_book = address(ask_book)
 
     @property
     def current_value(self) -> Tuple[float, float]:

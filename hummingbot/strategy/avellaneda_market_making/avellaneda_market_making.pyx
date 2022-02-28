@@ -661,15 +661,13 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
     cdef c_collect_market_variables(self, double timestamp):
         cdef:
             OrderBook ob = self._market_info.order_book
-            cppset[OrderBookEntry] bid_book = ob.c_get_bid_book()
-            cppset[OrderBookEntry] ask_book = ob.c_get_ask_book()
 
         market, trading_pair, base_asset, quote_asset = self._market_info
         self._last_sampling_timestamp = timestamp
 
         price = self.c_get_mid_price()
         self._avg_vol.add_sample(price)
-        # self._trading_intensity.c_add_sample(bid_book, ask_book)
+        self._trading_intensity.c_add_sample(ob.c_get_bid_book(), ob.c_get_ask_book())
         # Calculate adjustment factor to have 0.01% of inventory resolution
         base_balance = market.get_balance(base_asset)
         quote_balance = market.get_balance(quote_asset)
@@ -699,11 +697,11 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
         return vol
 
     cdef c_measure_order_book_liquidity(self):
-        #
-        # self._alpha, self._kappa = self._trading_intensity.current_value
-        #
-        # self._alpha = Decimal(self._alpha)
-        # self._kappa = Decimal(self._kappa)
+
+        self._alpha, self._kappa = self._trading_intensity.current_value
+
+        self._alpha = Decimal(self._alpha)
+        self._kappa = Decimal(self._kappa)
 
         if self._is_debug:
             self.logger().info(f"alpha={self._alpha:.4f} | "
@@ -835,10 +833,10 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
         return self.c_calculate_inventory()
 
     cdef bint c_is_algorithm_ready(self):
-        return self._avg_vol.is_sampling_buffer_full  # and self._trading_intensity.is_sampling_buffer_full
+        return self._avg_vol.is_sampling_buffer_full and self._trading_intensity.is_sampling_buffer_full
 
     cdef bint c_is_algorithm_changed(self):
-        return False  # self._trading_intensity.is_sampling_buffer_changed
+        return self._trading_intensity.is_sampling_buffer_changed
 
     def is_algorithm_ready(self) -> bool:
         return self.c_is_algorithm_ready()

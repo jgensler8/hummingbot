@@ -10,8 +10,8 @@ cdef class TradingIntensityIndicator:
         double _alpha
         double _kappa
         list _trades
-        set[OrderBookEntry] _bid_book
-        set[OrderBookEntry] _ask_book
+        set[OrderBookEntry] *_bid_book
+        set[OrderBookEntry] *_ask_book
         int _sampling_length
         int _samples_length
 
