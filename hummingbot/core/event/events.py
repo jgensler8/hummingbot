@@ -28,7 +28,7 @@ class MarketEvent(Enum):
     RangePositionFailure = 304
 
 
-class OrderBookEvent(Enum):
+class OrderBookEvent(int, Enum):
     TradeEvent = 901
 
 

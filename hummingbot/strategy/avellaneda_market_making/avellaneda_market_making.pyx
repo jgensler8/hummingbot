@@ -129,7 +129,9 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
         self.c_add_markets([market_info.market])
         self._ticks_to_be_ready = max(volatility_buffer_size, trading_intensity_buffer_size)
         self._avg_vol = InstantVolatilityIndicator(sampling_length=volatility_buffer_size)
-        self._trading_intensity = TradingIntensityIndicator(trading_intensity_buffer_size)
+        self._trading_intensity = TradingIntensityIndicator(
+            self._market_info.order_book, trading_intensity_buffer_size
+        )
         self._last_sampling_timestamp = 0
         self._alpha = None
         self._kappa = None
@@ -604,6 +606,7 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
                                           f"making may be dangerous when markets or networks are unstable.")
 
             self.c_collect_market_variables(timestamp)
+            self._trading_intensity.c_process_tick()
             if self.c_is_algorithm_ready():
                 if self._create_timestamp <= self._current_timestamp:
                     # Measure order book liquidity
@@ -667,7 +670,6 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
 
         price = self.c_get_mid_price()
         self._avg_vol.add_sample(price)
-        self._trading_intensity.c_add_sample(ob.c_get_bid_book(), ob.c_get_ask_book())
         # Calculate adjustment factor to have 0.01% of inventory resolution
         base_balance = market.get_balance(base_asset)
         quote_balance = market.get_balance(quote_asset)
