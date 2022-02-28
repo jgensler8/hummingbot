@@ -29,6 +29,10 @@ bool operator<(OrderBookEntry const &a, OrderBookEntry const &b) {
     return a.price < b.price;
 }
 
+bool operator==(OrderBookEntry const &a, OrderBookEntry const &b) {
+    return a.price == b.price && a.amount == b.amount && a.updateId == b.updateId;
+}
+
 void truncateOverlapEntries(std::set<OrderBookEntry> &bidBook, std::set<OrderBookEntry> &askBook, const int &dex) {
     if (dex != 0) {
         truncateOverlapEntriesDex(bidBook, askBook);

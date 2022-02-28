@@ -1,3 +1,6 @@
+# distutils: language=c++
+# distutils: sources=hummingbot/core/cpp/OrderBookEntry.cpp
+
 import datetime
 import logging
 import os
@@ -14,6 +17,7 @@ from typing import (
     Tuple,
 )
 
+from libcpp.set cimport set as cppset
 import numpy as np
 import pandas as pd
 
@@ -22,11 +26,11 @@ from hummingbot.connector.exchange_base cimport ExchangeBase
 from hummingbot.core.clock cimport Clock
 from hummingbot.core.data_type.limit_order cimport LimitOrder
 from hummingbot.core.data_type.limit_order import LimitOrder
+from hummingbot.core.data_type.order_book cimport OrderBook
 from hummingbot.core.event.events import OrderType, TradeType
 from hummingbot.core.network_iterator import NetworkStatus
 from hummingbot.core.utils import map_df_to_str
 from hummingbot.strategy.__utils__.trailing_indicators.instant_volatility import InstantVolatilityIndicator
-from hummingbot.strategy.__utils__.trailing_indicators.trading_intensity import TradingIntensityIndicator
 from hummingbot.strategy.conditional_execution_state import RunAlwaysExecutionState
 from hummingbot.strategy.data_types import (
     PriceSize,
@@ -385,12 +389,6 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
     cdef object c_get_mid_price(self):
         return self._market_info.get_mid_price()
 
-    def get_order_book_snapshot(self) -> float:
-        return self.c_get_order_book_snapshot()
-
-    cdef object c_get_order_book_snapshot(self):
-        return self._market_info.order_book.snapshot
-
     @property
     def market_info_to_active_orders(self) -> Dict[MarketTradingPairTuple, List[LimitOrder]]:
         return self._sb_order_tracker.market_pair_to_active_orders
@@ -590,7 +588,6 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
             int64_t last_tick = <int64_t>(self._last_timestamp // self._status_report_interval)
             bint should_report_warnings = ((current_tick > last_tick) and
                                            (self._logging_options & self.OPTION_LOG_STATUS_REPORT))
-            object proposal
 
         try:
             if not self._all_markets_ready:
@@ -632,7 +629,12 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
             self._last_timestamp = timestamp
 
     def process_tick(self, timestamp: float):
-        proposal = None
+        self.c_process_tick(timestamp)
+
+    cdef c_process_tick(self, float timestamp):
+        cdef:
+            object proposal = None
+
         # Trading is allowed
         if self._create_timestamp <= self._current_timestamp:
             # 1. Calculate reservation price and optimal spread from gamma, alpha, kappa and volatility
@@ -657,13 +659,17 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
             self.dump_debug_variables()
 
     cdef c_collect_market_variables(self, double timestamp):
+        cdef:
+            OrderBook ob = self._market_info.order_book
+            cppset[OrderBookEntry] bid_book = ob.c_get_bid_book()
+            cppset[OrderBookEntry] ask_book = ob.c_get_ask_book()
+
         market, trading_pair, base_asset, quote_asset = self._market_info
         self._last_sampling_timestamp = timestamp
 
-        price = self.get_price()
-        snapshot = self.get_order_book_snapshot()
+        price = self.c_get_mid_price()
         self._avg_vol.add_sample(price)
-        self._trading_intensity.add_sample(snapshot)
+        # self._trading_intensity.c_add_sample(bid_book, ask_book)
         # Calculate adjustment factor to have 0.01% of inventory resolution
         base_balance = market.get_balance(base_asset)
         quote_balance = market.get_balance(quote_asset)
@@ -693,11 +699,11 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
         return vol
 
     cdef c_measure_order_book_liquidity(self):
-
-        self._alpha, self._kappa = self._trading_intensity.current_value
-
-        self._alpha = Decimal(self._alpha)
-        self._kappa = Decimal(self._kappa)
+        #
+        # self._alpha, self._kappa = self._trading_intensity.current_value
+        #
+        # self._alpha = Decimal(self._alpha)
+        # self._kappa = Decimal(self._kappa)
 
         if self._is_debug:
             self.logger().info(f"alpha={self._alpha:.4f} | "
@@ -829,10 +835,10 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
         return self.c_calculate_inventory()
 
     cdef bint c_is_algorithm_ready(self):
-        return self._avg_vol.is_sampling_buffer_full and self._trading_intensity.is_sampling_buffer_full
+        return self._avg_vol.is_sampling_buffer_full  # and self._trading_intensity.is_sampling_buffer_full
 
     cdef bint c_is_algorithm_changed(self):
-        return self._trading_intensity.is_sampling_buffer_changed
+        return False  # self._trading_intensity.is_sampling_buffer_changed
 
     def is_algorithm_ready(self) -> bool:
         return self.c_is_algorithm_ready()

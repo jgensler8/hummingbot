@@ -319,6 +319,12 @@ cdef class OrderBook(PubSub):
     def get_price(self, is_buy: bool) -> float:
         return self.c_get_price(is_buy)
 
+    cdef set[OrderBookEntry] c_get_bid_book(self):
+        return self._bid_book
+
+    cdef set[OrderBookEntry] c_get_ask_book(self):
+        return self._ask_book
+
     cdef OrderBookQueryResult c_get_price_for_volume(self, bint is_buy, double volume):
         cdef:
             double cumulative_volume = 0

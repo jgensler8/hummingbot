@@ -31,6 +31,8 @@ cdef class OrderBook(PubSub):
                                 np.ndarray[np.float64_t, ndim=2] bids_array,
                                 np.ndarray[np.float64_t, ndim=2] asks_array)
     cdef double c_get_price(self, bint is_buy) except? -1
+    cdef set[OrderBookEntry] c_get_bid_book(self)
+    cdef set[OrderBookEntry] c_get_ask_book(self)
     cdef OrderBookQueryResult c_get_price_for_volume(self, bint is_buy, double volume)
     cdef OrderBookQueryResult c_get_price_for_quote_volume(self, bint is_buy, double quote_volume)
     cdef OrderBookQueryResult c_get_volume_for_price(self, bint is_buy, double price)

@@ -1,89 +1,108 @@
+# distutils: language=c++
+# distutils: sources=hummingbot/core/cpp/OrderBookEntry.cpp
+
+import warnings
 from decimal import Decimal
-from math import floor, ceil
+from typing import (
+    Tuple, List,
+)
+
 import numpy as np
-import pandas as pd
+from cython.operator cimport(
+    dereference as deref,
+    postincrement as inc,
+)
+from libcpp.set cimport set
 from scipy.optimize import curve_fit
 from scipy.optimize import OptimizeWarning
-from typing import (
-    Tuple,
-)
-import warnings
 
+from hummingbot.core.data_type.order_book_row import OrderBookRow
 
-cdef class TradingIntensityIndicator():
+cdef class TradingIntensityIndicator:
 
     def __init__(self, sampling_length: int = 30):
         self._alpha = 0
         self._kappa = 0
         self._trades = []
-        self._bids_df = None
-        self._asks_df = None
         self._sampling_length = sampling_length
         self._samples_length = 0
 
         warnings.simplefilter("ignore", OptimizeWarning)
 
-    def _simulate_execution(self, bids_df, asks_df):
-        self.c_simulate_execution(bids_df, asks_df)
-
-    cdef c_simulate_execution(self, new_bids_df, new_asks_df):
+    cdef c_simulate_execution(
+        self, set[OrderBookEntry] bid_book, set[OrderBookEntry] ask_book
+    ):
         cdef:
-            object _bids_df = self._bids_df
-            object _asks_df = self._asks_df
-            object bids_df = new_bids_df
-            object asks_df = new_asks_df
-            int _sampling_length = self._sampling_length
-            object bid
-            object ask
-            object price
-            object bid_prev
-            object ask_prev
-            object price_prev
+            set[OrderBookEntry].reverse_iterator ob_ri_prev
+            set[OrderBookEntry].iterator ob_i_prev
+            double price_prev
+            double bid
+            double bid_amount
+            double ask
+            double ask_amount
+            double bid_prev
+            double bid_amount_prev
+            double ask_prev
+            double ask_amount_prev
+            double trade_price_level
+            double trade_amount
             list trades
 
         # Estimate market orders that happened
         # Assume every movement in the BBO is caused by a market order and its size is the volume differential
 
-        bid = bids_df["price"].iloc[0]
-        ask = asks_df["price"].iloc[0]
-        price = (bid + ask) / 2
+        bid = deref(bid_book.rbegin()).getPrice()
+        bid_amount = deref(bid_book.rbegin()).getAmount()
+        ask = deref(ask_book.begin()).getPrice()
+        ask_amount = deref(ask_book.begin()).getAmount()
 
-        bid_prev = _bids_df["price"].iloc[0]
-        ask_prev = _asks_df["price"].iloc[0]
+        bid_prev = deref(self._bid_book.rbegin()).getPrice()
+        ask_prev = deref(self._ask_book.begin()).getPrice()
         price_prev = (bid_prev + ask_prev) / 2
 
         trades = []
 
         # Higher bids were filled - someone matched them - a determined seller
         # Equal bids - if amount lower - partially filled
-        for index, row in _bids_df[_bids_df['price'] >= bid].iterrows():
-            if row['price'] == bid:
-                if bids_df["amount"].iloc[0] < row['amount']:
-                    amount = row['amount'] - bids_df["amount"].iloc[0]
-                    price_level = abs(row['price'] - price_prev)
-                    trades += [{'price_level': price_level, 'amount': amount}]
+        ob_ri_prev = self._bid_book.rbegin()
+        while ob_ri_prev != self._bid_book.rend():
+            bid_prev = deref(ob_ri_prev).getPrice()
+            bid_amount_prev = deref(ob_ri_prev).getAmount()
+            if bid_prev < bid:
+                break
+            elif bid_prev == bid:
+                if bid_amount < bid_amount_prev:
+                    trade_amount = bid_amount_prev - bid_amount
+                    trade_price_level = abs(bid_prev - price_prev)
+                    trades.append({"price_level": trade_price_level, "amount": trade_amount})
             else:
-                amount = row['amount']
-                price_level = abs(row['price'] - price_prev)
-                trades += [{'price_level': price_level, 'amount': amount}]
+                trade_amount = bid_amount_prev
+                trade_price_level = abs(bid_prev - price_prev)
+                trades.append({"price_level": trade_price_level, "amount": trade_amount})
+            inc(ob_ri_prev)
 
         # Lower asks were filled - someone matched them - a determined buyer
         # Equal asks - if amount lower - partially filled
-        for index, row in _asks_df[_asks_df['price'] <= ask].iterrows():
-            if row['price'] == ask:
-                if asks_df["amount"].iloc[0] < row['amount']:
-                    amount = row['amount'] - asks_df["amount"].iloc[0]
-                    price_level = abs(row['price'] - price_prev)
-                    trades += [{'price_level': price_level, 'amount': amount}]
+        ob_i_prev = self._ask_book.begin()
+        while ob_i_prev != self._ask_book.end():
+            ask_prev = deref(ob_i_prev).getPrice()
+            ask_amount_prev = deref(ob_i_prev).getAmount()
+            if ask_prev < ask:
+                break
+            elif ask_prev == ask:
+                if ask_amount < ask_amount_prev:
+                    trade_amount = ask_amount_prev - ask_amount
+                    trade_price_level = abs(ask_prev - price_prev)
+                    trades.append({"price_level": trade_price_level, "amount": trade_amount})
             else:
-                amount = row['amount']
-                price_level = abs(row['price'] - price_prev)
-                trades += [{'price_level': price_level, 'amount': amount}]
+                trade_amount = ask_amount_prev
+                trade_price_level = abs(ask_prev - price_prev)
+                trades.append({"price_level": trade_price_level, "amount": trade_amount})
+            inc(ob_i_prev)
 
         # Add trades
         self._trades += [trades]
-        if len(self._trades) > _sampling_length:
-            self._trades = self._trades[1:]
+        self._trades = self._trades[-self._sampling_length:]
 
     def _estimate_intensity(self):
         self.c_estimate_intensity()
@@ -129,31 +148,40 @@ cdef class TradingIntensityIndicator():
         except (RuntimeError, ValueError) as e:
             pass
 
-    def add_sample(self, value: Tuple[pd.DataFrame, pd.DataFrame]):
-        bids_df = value[0]
-        asks_df = value[1]
+    def add_sample(self, bid_entries: List[OrderBookRow], ask_entries: List[OrderBookRow]):
+        cdef:
+            set[OrderBookEntry] bid_book
+            set[OrderBookEntry] ask_book
 
-        if bids_df.empty or asks_df.empty:
+        for e in bid_entries:
+            bid_book.insert(OrderBookEntry(e.price, e.amount, e.update_id))
+        for e in ask_entries:
+            ask_book.insert(OrderBookEntry(e.price, e.amount, e.update_id))
+
+        self.c_add_sample(bid_book, ask_book)
+
+    cdef c_add_sample(self, set[OrderBookEntry] bid_book, set[OrderBookEntry] ask_book):
+        if bid_book.size() == 0 or ask_book.size() == 0:
             return
 
-        # Skip snapshots where no trades occured
-        if self._bids_df is not None and self._bids_df.equals(bids_df):
+        # Skip snapshots where no trades occurred
+        if self._bid_book.size() != 0 and deref(bid_book.begin()) == deref(self._bid_book.begin()):
             return
 
-        if self._asks_df is not None and self._asks_df.equals(asks_df):
+        if self._ask_book.size() != 0 and deref(ask_book.begin()) == deref(self._ask_book.begin()):
             return
 
-        if self._bids_df is not None and self._asks_df is not None:
-            # Retrieve previous order book, evaluate execution
-            self.c_simulate_execution(bids_df, asks_df)
+        # Retrieve previous order book, evaluate execution
+        if self._bid_book.size() != 0 and self._ask_book.size() != 0:
+            self.c_simulate_execution(bid_book, ask_book)
 
-            if self.is_sampling_buffer_full:
-                # Estimate alpha and kappa
-                self.c_estimate_intensity()
+        if self.is_sampling_buffer_full:
+            # Estimate alpha and kappa
+            self.c_estimate_intensity()
 
         # Store the orderbook
-        self._bids_df = bids_df
-        self._asks_df = asks_df
+        self._bid_book = bid_book
+        self._ask_book = ask_book
 
     @property
     def current_value(self) -> Tuple[float, float]:

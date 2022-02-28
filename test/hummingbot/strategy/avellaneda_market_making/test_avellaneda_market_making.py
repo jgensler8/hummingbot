@@ -203,14 +203,13 @@ class AvellanedaMarketMakingUnitTests(unittest.TestCase):
             np.random.seed(INITIAL_RANDOM_SEED)     # Using this hardcoded random seed we guarantee random samples generated are always the same
 
             # Generate orderbooks for all ticks
-            bids_df, asks_df = AvellanedaMarketMakingUnitTests.make_order_books(original_price_mid, original_spread, original_amount, volatility, spread_stdev, amount_stdev, N_SAMPLES)
+            bid_rows_sets, ask_rows_sets = AvellanedaMarketMakingUnitTests.make_order_books(original_price_mid, original_spread, original_amount, volatility, spread_stdev, amount_stdev, N_SAMPLES)
 
             # This replicates the same indicator Avellaneda uses for trading intensity estimation
             trading_intensity_indicator = strategy.trading_intensity
 
-            for bid_df, ask_df in zip(bids_df, asks_df):
-                snapshot = (bid_df, ask_df)
-                trading_intensity_indicator.add_sample(snapshot)
+            for bid_rows, ask_rows in zip(bid_rows_sets, ask_rows_sets):
+                trading_intensity_indicator.add_sample(bid_rows, ask_rows)
 
             self.trading_intensity_indicator_low_liq = trading_intensity_indicator
 
@@ -233,14 +232,13 @@ class AvellanedaMarketMakingUnitTests(unittest.TestCase):
             np.random.seed(INITIAL_RANDOM_SEED)     # Using this hardcoded random seed we guarantee random samples generated are always the same
 
             # Generate orderbooks for all ticks
-            bids_df, asks_df = AvellanedaMarketMakingUnitTests.make_order_books(original_price_mid, original_spread, original_amount, volatility, spread_stdev, amount_stdev, N_SAMPLES)
+            bid_rows_sets, ask_rows_sets = AvellanedaMarketMakingUnitTests.make_order_books(original_price_mid, original_spread, original_amount, volatility, spread_stdev, amount_stdev, N_SAMPLES)
 
             # This replicates the same indicator Avellaneda uses for trading intensity estimation
             trading_intensity_indicator = strategy.trading_intensity
 
-            for bid_df, ask_df in zip(bids_df, asks_df):
-                snapshot = (bid_df, ask_df)
-                trading_intensity_indicator.add_sample(snapshot)
+            for bid_rows, ask_rows in zip(bid_rows_sets, ask_rows_sets):
+                trading_intensity_indicator.add_sample(bid_rows, ask_rows)
 
             self.trading_intensity_indicator_high_liq = trading_intensity_indicator
 
@@ -265,16 +263,16 @@ class AvellanedaMarketMakingUnitTests(unittest.TestCase):
         # A full orderbook is not necessary, only up to the BBO max deviation
         price_depth_max = max(max(samples_price_bid) - min(samples_price_bid), max(samples_price_ask) - min(samples_price_ask))
 
-        bid_dfs = []
-        ask_dfs = []
+        bid_row_sets = []
+        ask_row_sets = []
 
         # Generate an orderbook for every tick
         for price_bid, amount_bid, price_ask, amount_ask in zip(samples_price_bid, samples_amount_bid, samples_price_ask, samples_amount_ask):
-            bid_df, ask_df = AvellanedaMarketMakingUnitTests.make_order_book(price_bid, amount_bid, price_ask, amount_ask, price_depth_max, original_price_mid * PRICE_STEP_FRACTION, amount_stdev)
-            bid_dfs += [bid_df]
-            ask_dfs += [ask_df]
+            bid_rows, ask_rows = AvellanedaMarketMakingUnitTests.make_order_book(price_bid, amount_bid, price_ask, amount_ask, price_depth_max, original_price_mid * PRICE_STEP_FRACTION, amount_stdev)
+            bid_row_sets += [bid_rows]
+            ask_row_sets += [ask_rows]
 
-        return bid_dfs, ask_dfs
+        return bid_row_sets, ask_row_sets
 
     @staticmethod
     def make_order_book(price_bid, amount_bid, price_ask, amount_ask, price_depth, price_step, amount_stdev, ):
@@ -282,18 +280,24 @@ class AvellanedaMarketMakingUnitTests(unittest.TestCase):
         prices_bid = np.linspace(price_bid, price_bid - price_depth, math.ceil(price_depth / price_step))
         amounts_bid = np.random.normal(amount_bid, amount_stdev, len(prices_bid))
         amounts_bid[0] = amount_bid
+        update_ids_bid = [1] * len(amounts_bid)
 
         prices_ask = np.linspace(price_ask, price_ask + price_depth, math.ceil(price_depth / price_step))
         amounts_ask = np.random.normal(amount_ask, amount_stdev, len(prices_ask))
         amounts_ask[0] = amount_ask
+        update_ids_ask = [1] * len(amounts_ask)
 
-        data_bid = {'price': prices_bid, 'amount': amounts_bid}
-        bid_df = pd.DataFrame(data=data_bid)
+        bid_rows = [
+            OrderBookRow(price, amount, update_id)
+            for price, amount, update_id in zip(prices_bid, amounts_bid, update_ids_bid)
+        ]
 
-        data_ask = {'price': prices_ask, 'amount': amounts_ask}
-        ask_df = pd.DataFrame(data=data_ask)
+        ask_rows = [
+            OrderBookRow(price, amount, update_id)
+            for price, amount, update_id in zip(prices_ask, amounts_ask, update_ids_ask)
+        ]
 
-        return bid_df, ask_df
+        return bid_rows, ask_rows
 
     @staticmethod
     def simulate_place_limit_order(strategy: AvellanedaMarketMakingStrategy, market_info: MarketTradingPairTuple, order: LimitOrder):
