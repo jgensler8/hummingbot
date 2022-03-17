@@ -3,21 +3,12 @@
 
 import warnings
 from decimal import Decimal
-from typing import (
-    Tuple, List,
-)
+from typing import Tuple
 
 import numpy as np
-from cython.operator cimport(
-    address,
-    dereference as deref,
-    postincrement as inc,
-)
-from libcpp.set cimport set
 from scipy.optimize import curve_fit
 from scipy.optimize import OptimizeWarning
 
-from hummingbot.core.data_type.order_book_row import OrderBookRow
 from hummingbot.core.event.event_listener cimport EventListener
 from hummingbot.core.event.events import TradeType, OrderBookEvent
 
@@ -68,6 +59,8 @@ cdef class TradingIntensityIndicator:
         if len(self._trade_samples) > self._sampling_length:
             self._trade_samples = self._trade_samples[-self._sampling_length:]
         self._current_trade_sample = []
+        if self.is_sampling_buffer_full:
+            self.c_estimate_intensity()
 
     cdef c_register_trade(self, object trade):
         self._current_trade_sample.append({"price_level": abs(trade.price - self._last_price), "amount": trade.amount})
