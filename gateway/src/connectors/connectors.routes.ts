@@ -21,6 +21,16 @@ export namespace ConnectorsRoutes {
             trading_type: PangolinConfig.config.tradingTypes,
             available_networks: PangolinConfig.config.availableNetworks,
           },
+          {
+            name: 'sushiswap_harmony',
+            trading_type: UniswapConfig.config.tradingTypes('v2'),
+            available_networks: [{"chain": "harmony", "networks": "mainnet"}],
+          },
+          {
+            name: 'viperswap_harmony',
+            trading_type: UniswapConfig.config.tradingTypes('v2'),
+            available_networks: [{"chain": "harmony", "networks": "mainnet"}],
+          },
         ],
       });
     })

@@ -12,8 +12,10 @@ from hummingbot.core.utils import detect_available_port
 _default_paths: Optional["GatewayPaths"] = None
 _hummingbot_pipe: Optional[aioprocessing.AioConnection] = None
 
-GATEWAY_DOCKER_REPO: str = "coinalpha/gateway-v2-dev"
-GATEWAY_DOCKER_TAG: str = "20220401-arm" if os.uname().machine in {"arm64", "aarch64"} else "20220329"
+# GATEWAY_DOCKER_REPO: str = "coinalpha/gateway-v2-dev"
+# GATEWAY_DOCKER_TAG: str = "20220401-arm" if os.uname().machine in {"arm64", "aarch64"} else "20220329"
+GATEWAY_DOCKER_REPO: str = "local-gateway"
+GATEWAY_DOCKER_TAG: str = "latest"
 S_DECIMAL_0: Decimal = Decimal(0)
 
 
